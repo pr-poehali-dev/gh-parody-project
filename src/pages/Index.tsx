@@ -71,21 +71,49 @@ type Tab = typeof NAV[number]['id'];
 
 const fmt = (n: number) => n >= 1000 ? (n / 1000).toFixed(1).replace('.0', '') + 'k' : String(n);
 
+const MAX_SIZE = 10 * 1024 * 1024; // 10 МБ
+
+const loadSaved = (): UploadedFile[] => {
+  try { return JSON.parse(localStorage.getItem('gitbrat_files') || '[]'); } catch { return []; }
+};
+
 const Index = () => {
   const [tab, setTab] = useState<Tab>('home');
   const [query, setQuery] = useState('');
   const [likes, setLikes] = useState<Record<number, boolean>>({});
-  const [uploaded, setUploaded] = useState<UploadedFile[]>([]);
+  const [uploaded, setUploaded] = useState<UploadedFile[]>(loadSaved);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
+
+  const addFile = (f: UploadedFile) => {
+    setUploaded((prev) => {
+      const next = [f, ...prev];
+      localStorage.setItem('gitbrat_files', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const removeFile = (url: string) => {
+    setUploaded((prev) => {
+      const next = prev.filter((f) => f.url !== url);
+      localStorage.setItem('gitbrat_files', JSON.stringify(next));
+      return next;
+    });
+  };
 
   const toggleLike = (id: number) => setLikes((p) => ({ ...p, [id]: !p[id] }));
   const likeCount = (base: number, id: number) => base + (likes[id] ? 1 : 0);
 
   const uploadFiles = async (files: FileList | File[]) => {
     setUploadError('');
+    for (const file of Array.from(files)) {
+      if (file.size > MAX_SIZE) {
+        setUploadError(`Файл «${file.name}» весит больше 10 МБ — выберите файл поменьше`);
+        return;
+      }
+    }
     setUploading(true);
     try {
       for (const file of Array.from(files)) {
@@ -106,10 +134,10 @@ const Index = () => {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Ошибка загрузки');
-        setUploaded((prev) => [data as UploadedFile, ...prev]);
+        addFile(data as UploadedFile);
       }
     } catch (e) {
-      setUploadError(e instanceof Error ? e.message : 'Не удалось загрузить файл');
+      setUploadError(e instanceof Error ? e.message : 'Не удалось загрузить файл — проверьте размер и попробуйте снова');
     } finally {
       setUploading(false);
     }
@@ -267,6 +295,56 @@ const Index = () => {
               ))}
             </div>
           </section>
+
+          {uploaded.length > 0 && (
+            <section className="container px-4 pb-14">
+              <div className="mb-6 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Icon name="CloudUpload" size={20} className="text-accent" />
+                  <h2 className="text-2xl font-bold">Мои загрузки</h2>
+                  <span className="rounded-full border border-border bg-card px-2 py-0.5 text-xs text-muted-foreground">{uploaded.length}</span>
+                </div>
+                <button onClick={() => setTab('upload')} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  Загрузить ещё →
+                </button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+                {uploaded.map((f, i) => (
+                  <div
+                    key={f.url}
+                    className="animate-fade-in group relative flex flex-col gap-3 rounded-xl border border-border bg-card p-4 transition-all hover:border-accent/50"
+                    style={{ animationDelay: `${i * 40}ms` }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary text-xl">
+                        {fileEmoji(f.content_type, f.filename)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate font-mono-code text-sm font-semibold text-accent">{f.filename}</div>
+                        <div className="text-xs text-muted-foreground">{sizeStr(f.size)}</div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <a
+                        href={f.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border bg-secondary py-1.5 text-xs font-medium transition-colors hover:border-accent/50 hover:text-accent"
+                      >
+                        <Icon name="ExternalLink" size={13} /> Открыть
+                      </a>
+                      <button
+                        onClick={() => navigator.clipboard?.writeText(f.url)}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border bg-secondary py-1.5 text-xs font-medium transition-colors hover:border-accent/50 hover:text-accent"
+                      >
+                        <Icon name="Copy" size={13} /> Ссылка
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </>
       )}
 
@@ -352,7 +430,7 @@ const Index = () => {
             <p className="mt-4 font-semibold">
               {uploading ? 'Загружаю в космос...' : 'Перетащите файлы сюда или нажмите'}
             </p>
-            <p className="mt-1 text-sm text-muted-foreground">Любой формат до 15 МБ</p>
+            <p className="mt-1 text-sm text-muted-foreground">Любой формат до 10 МБ</p>
           </div>
 
           {uploadError && (
@@ -396,6 +474,12 @@ const Index = () => {
                       className="flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 py-1.5 text-sm font-medium transition-colors hover:border-primary/50 hover:text-primary"
                     >
                       <Icon name="Copy" size={14} /> Ссылка
+                    </button>
+                    <button
+                      onClick={() => removeFile(f.url)}
+                      className="flex shrink-0 items-center justify-center rounded-md border border-border bg-secondary p-2 text-muted-foreground transition-colors hover:border-destructive/50 hover:text-destructive"
+                    >
+                      <Icon name="Trash2" size={14} />
                     </button>
                   </div>
                 ))}
