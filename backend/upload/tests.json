@@ -1,0 +1,35 @@
+{
+  "tests": [
+    {
+      "name": "CORS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Upload tiny text file",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "filename": "hello.txt",
+        "content_type": "text/plain",
+        "content_base64": "SGVsbG8gR2l0QnJhdCE="
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "url": "string",
+        "filename": "string"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Reject empty file",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "filename": "empty.txt"
+      },
+      "expectedStatus": 400
+    }
+  ]
+}

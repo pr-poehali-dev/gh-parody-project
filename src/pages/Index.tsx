@@ -1,5 +1,26 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Icon from '@/components/ui/icon';
+
+const UPLOAD_URL = 'https://functions.poehali.dev/b15e1b26-94ae-42db-bc64-703ef2e44bb8';
+
+type UploadedFile = {
+  url: string;
+  filename: string;
+  size: number;
+  content_type: string;
+};
+
+const fileEmoji = (type: string, name: string) => {
+  if (type.startsWith('image/')) return '🖼️';
+  if (type.startsWith('video/')) return '🎬';
+  if (type.startsWith('audio/')) return '🎵';
+  if (type.includes('pdf')) return '📕';
+  if (type.includes('zip') || type.includes('rar') || name.match(/\.(zip|rar|7z|tar|gz)$/i)) return '🗜️';
+  if (name.match(/\.(js|ts|tsx|jsx|py|go|rs|java|c|cpp|css|html|json)$/i)) return '📜';
+  return '📄';
+};
+
+const sizeStr = (b: number) => (b < 1024 ? `${b} Б` : b < 1048576 ? `${(b / 1024).toFixed(1)} КБ` : `${(b / 1048576).toFixed(1)} МБ`);
 
 type Repo = {
   id: number;
@@ -42,6 +63,7 @@ const NAV = [
   { id: 'home', label: 'Главная', icon: 'House' },
   { id: 'search', label: 'Поиск', icon: 'Search' },
   { id: 'repos', label: 'Репозитории', icon: 'FolderGit2' },
+  { id: 'upload', label: 'Загрузить', icon: 'Upload' },
   { id: 'profile', label: 'Профиль', icon: 'User' },
 ] as const;
 
@@ -53,9 +75,45 @@ const Index = () => {
   const [tab, setTab] = useState<Tab>('home');
   const [query, setQuery] = useState('');
   const [likes, setLikes] = useState<Record<number, boolean>>({});
+  const [uploaded, setUploaded] = useState<UploadedFile[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const toggleLike = (id: number) => setLikes((p) => ({ ...p, [id]: !p[id] }));
   const likeCount = (base: number, id: number) => base + (likes[id] ? 1 : 0);
+
+  const uploadFiles = async (files: FileList | File[]) => {
+    setUploadError('');
+    setUploading(true);
+    try {
+      for (const file of Array.from(files)) {
+        const base64: string = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve((reader.result as string).split(',')[1]);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const res = await fetch(UPLOAD_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: file.name,
+            content_type: file.type || 'application/octet-stream',
+            content_base64: base64,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Ошибка загрузки');
+        setUploaded((prev) => [data as UploadedFile, ...prev]);
+      }
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : 'Не удалось загрузить файл');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const filtered = REPOS.filter(
     (r) =>
@@ -254,6 +312,96 @@ const Index = () => {
               <RepoCard key={r.id} r={r} i={i} />
             ))}
           </div>
+        </section>
+      )}
+
+      {/* UPLOAD */}
+      {tab === 'upload' && (
+        <section className="container px-4 py-10">
+          <div className="mb-6 flex items-center gap-2">
+            <Icon name="Upload" size={22} className="text-primary" />
+            <h2 className="text-2xl font-bold">Загрузка файлов</h2>
+          </div>
+          <p className="mb-6 text-sm text-muted-foreground">
+            Заливайте свои файлы в облако. Максимум 15 МБ на файл. README читать необязательно.
+          </p>
+
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
+            }}
+            onClick={() => fileInput.current?.click()}
+            className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed py-16 text-center transition-all ${
+              dragOver ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/50'
+            }`}
+          >
+            <input
+              ref={fileInput}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => { if (e.target.files?.length) uploadFiles(e.target.files); e.target.value = ''; }}
+            />
+            <div className={`flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/15 text-3xl ${uploading ? 'animate-pulse' : ''}`}>
+              {uploading ? '⏳' : '📤'}
+            </div>
+            <p className="mt-4 font-semibold">
+              {uploading ? 'Загружаю в космос...' : 'Перетащите файлы сюда или нажмите'}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">Любой формат до 15 МБ</p>
+          </div>
+
+          {uploadError && (
+            <div className="mt-4 flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              <Icon name="TriangleAlert" size={16} /> {uploadError}
+            </div>
+          )}
+
+          {uploaded.length > 0 && (
+            <div className="mt-8">
+              <h3 className="mb-4 flex items-center gap-2 text-lg font-bold">
+                <Icon name="FolderCheck" size={18} className="text-primary" /> Загруженные файлы
+                <span className="rounded-full border border-border bg-card px-2 py-0.5 text-xs font-normal text-muted-foreground">
+                  {uploaded.length}
+                </span>
+              </h3>
+              <div className="grid gap-3">
+                {uploaded.map((f, i) => (
+                  <div
+                    key={f.url}
+                    className="animate-fade-in flex items-center gap-4 rounded-xl border border-border bg-card p-4"
+                    style={{ animationDelay: `${i * 50}ms` }}
+                  >
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary text-2xl">
+                      {fileEmoji(f.content_type, f.filename)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-mono-code text-sm font-semibold text-accent">{f.filename}</div>
+                      <div className="text-xs text-muted-foreground">{sizeStr(f.size)}</div>
+                    </div>
+                    <a
+                      href={f.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 py-1.5 text-sm font-medium transition-colors hover:border-primary/50 hover:text-primary"
+                    >
+                      <Icon name="ExternalLink" size={14} /> Открыть
+                    </a>
+                    <button
+                      onClick={() => navigator.clipboard?.writeText(f.url)}
+                      className="flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 py-1.5 text-sm font-medium transition-colors hover:border-primary/50 hover:text-primary"
+                    >
+                      <Icon name="Copy" size={14} /> Ссылка
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
       )}
 
