@@ -7,6 +7,14 @@
       "expectedStatus": 200
     },
     {
+      "name": "Set bucket CORS",
+      "method": "GET",
+      "path": "/?action=set_cors",
+      "expectedStatus": 200,
+      "expectedBody": {},
+      "bodyMatcher": "partial"
+    },
+    {
       "name": "Generate presigned URL",
       "method": "POST",
       "path": "/",
