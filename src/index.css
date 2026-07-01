@@ -4,33 +4,33 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 220 27% 6%;
+    --foreground: 210 20% 92%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card: 215 21% 11%;
+    --card-foreground: 210 20% 92%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover: 215 21% 11%;
+    --popover-foreground: 210 20% 92%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 137 55% 45%;
+    --primary-foreground: 220 27% 6%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 215 18% 16%;
+    --secondary-foreground: 210 20% 92%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 215 18% 16%;
+    --muted-foreground: 215 12% 55%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 212 92% 60%;
+    --accent-foreground: 220 27% 6%;
 
-    --destructive: 0 84.2% 60.2%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --border: 215 16% 20%;
+    --input: 215 16% 20%;
+    --ring: 137 55% 45%;
 
     --radius: 0.5rem;
 
@@ -97,5 +97,46 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: "Rubik", sans-serif;
+    background-image:
+      radial-gradient(
+        circle at 20% 0%,
+        hsl(137 55% 45% / 0.06),
+        transparent 40%
+      ),
+      radial-gradient(
+        circle at 90% 10%,
+        hsl(212 92% 60% / 0.06),
+        transparent 40%
+      );
+    background-attachment: fixed;
+  }
+}
+
+@layer utilities {
+  .font-mono-code {
+    font-family: "JetBrains Mono", monospace;
+  }
+  .hover-scale {
+    @apply transition-transform duration-200 hover:scale-105;
+  }
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-out both;
+  }
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .grid-bg {
+    background-image:
+      linear-gradient(hsl(215 16% 20% / 0.4) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(215 16% 20% / 0.4) 1px, transparent 1px);
+    background-size: 32px 32px;
   }
 }
