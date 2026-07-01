@@ -1,7 +1,8 @@
 import { useState, useRef } from 'react';
 import Icon from '@/components/ui/icon';
 
-const PRESIGN_URL = 'https://functions.poehali.dev/25808474-77a6-4779-9382-1c81b74dedae';
+const UPLOAD_URL = 'https://functions.poehali.dev/b15e1b26-94ae-42db-bc64-703ef2e44bb8';
+const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4 МБ — лимит тела облачной функции
 
 type UploadedFile = {
   url: string;
@@ -113,41 +114,32 @@ const Index = () => {
     try {
       for (let idx = 0; idx < list.length; idx++) {
         const file = list[idx];
+
+        if (file.size > MAX_FILE_SIZE) {
+          throw new Error(`Файл «${file.name}» больше 4 МБ. Попробуйте файл поменьше.`);
+        }
+
         const content_type = file.type || 'application/octet-stream';
 
-        // 1. Получаем presigned URL от сервера
-        const presignRes = await fetch(PRESIGN_URL, {
+        const base64: string = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve((reader.result as string).split(',')[1]);
+          reader.onerror = () => reject(new Error('Не удалось прочитать файл'));
+          reader.readAsDataURL(file);
+        });
+
+        setUploadProgress(Math.round(((idx + 0.5) / list.length) * 100));
+
+        const res = await fetch(UPLOAD_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filename: file.name, content_type }),
+          body: JSON.stringify({ filename: file.name, content_type, content_base64: base64 }),
         });
-        const presignData = await presignRes.json();
-        if (!presignRes.ok) throw new Error(presignData.error || 'Не удалось подготовить загрузку');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Ошибка на сервере');
 
-        // 2. Загружаем файл напрямую в S3 через XMLHttpRequest (для прогресса)
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('PUT', presignData.upload_url);
-          xhr.setRequestHeader('Content-Type', content_type);
-          xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) {
-              const fileProgress = e.loaded / e.total;
-              const overall = ((idx + fileProgress) / list.length) * 100;
-              setUploadProgress(Math.round(overall));
-            }
-          };
-          xhr.onload = () => xhr.status < 300 ? resolve() : reject(new Error(`Ошибка загрузки: ${xhr.status}`));
-          xhr.onerror = () => reject(new Error('Сетевая ошибка при загрузке файла'));
-          xhr.send(file);
-        });
-
+        addFile(data as UploadedFile);
         setUploadProgress(Math.round(((idx + 1) / list.length) * 100));
-        addFile({
-          url: presignData.cdn_url,
-          filename: file.name,
-          size: file.size,
-          content_type,
-        });
       }
     } catch (e) {
       setUploadError(e instanceof Error ? e.message : 'Не удалось загрузить файл');
@@ -452,7 +444,7 @@ const Index = () => {
                 />
               </div>
             ) : (
-              <p className="mt-1 text-sm text-muted-foreground">Любой формат, любой размер</p>
+              <p className="mt-1 text-sm text-muted-foreground">Любой формат до 4 МБ</p>
             )}
           </div>
 
