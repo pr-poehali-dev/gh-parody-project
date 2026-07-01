@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import Icon from '@/components/ui/icon';
 
-const UPLOAD_URL = 'https://functions.poehali.dev/b15e1b26-94ae-42db-bc64-703ef2e44bb8';
+const PRESIGN_URL = 'https://functions.poehali.dev/25808474-77a6-4779-9382-1c81b74dedae';
 
 type UploadedFile = {
   url: string;
@@ -71,8 +71,6 @@ type Tab = typeof NAV[number]['id'];
 
 const fmt = (n: number) => n >= 1000 ? (n / 1000).toFixed(1).replace('.0', '') + 'k' : String(n);
 
-const MAX_SIZE = 10 * 1024 * 1024; // 10 МБ
-
 const loadSaved = (): UploadedFile[] => {
   try { return JSON.parse(localStorage.getItem('gitbrat_files') || '[]'); } catch { return []; }
 };
@@ -83,6 +81,7 @@ const Index = () => {
   const [likes, setLikes] = useState<Record<number, boolean>>({});
   const [uploaded, setUploaded] = useState<UploadedFile[]>(loadSaved);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
@@ -108,38 +107,53 @@ const Index = () => {
 
   const uploadFiles = async (files: FileList | File[]) => {
     setUploadError('');
-    for (const file of Array.from(files)) {
-      if (file.size > MAX_SIZE) {
-        setUploadError(`Файл «${file.name}» весит больше 10 МБ — выберите файл поменьше`);
-        return;
-      }
-    }
     setUploading(true);
+    setUploadProgress(0);
+    const list = Array.from(files);
     try {
-      for (const file of Array.from(files)) {
-        const base64: string = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve((reader.result as string).split(',')[1]);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-        const res = await fetch(UPLOAD_URL, {
+      for (let idx = 0; idx < list.length; idx++) {
+        const file = list[idx];
+        const content_type = file.type || 'application/octet-stream';
+
+        // 1. Получаем presigned URL от сервера
+        const presignRes = await fetch(PRESIGN_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filename: file.name,
-            content_type: file.type || 'application/octet-stream',
-            content_base64: base64,
-          }),
+          body: JSON.stringify({ filename: file.name, content_type }),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Ошибка загрузки');
-        addFile(data as UploadedFile);
+        const presignData = await presignRes.json();
+        if (!presignRes.ok) throw new Error(presignData.error || 'Не удалось подготовить загрузку');
+
+        // 2. Загружаем файл напрямую в S3 через XMLHttpRequest (для прогресса)
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', presignData.upload_url);
+          xhr.setRequestHeader('Content-Type', content_type);
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const fileProgress = e.loaded / e.total;
+              const overall = ((idx + fileProgress) / list.length) * 100;
+              setUploadProgress(Math.round(overall));
+            }
+          };
+          xhr.onload = () => xhr.status < 300 ? resolve() : reject(new Error(`Ошибка загрузки: ${xhr.status}`));
+          xhr.onerror = () => reject(new Error('Сетевая ошибка при загрузке файла'));
+          xhr.send(file);
+        });
+
+        setUploadProgress(Math.round(((idx + 1) / list.length) * 100));
+        addFile({
+          url: presignData.cdn_url,
+          filename: file.name,
+          size: file.size,
+          content_type,
+        });
       }
     } catch (e) {
-      setUploadError(e instanceof Error ? e.message : 'Не удалось загрузить файл — проверьте размер и попробуйте снова');
+      setUploadError(e instanceof Error ? e.message : 'Не удалось загрузить файл');
     } finally {
       setUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -425,12 +439,21 @@ const Index = () => {
               onChange={(e) => { if (e.target.files?.length) uploadFiles(e.target.files); e.target.value = ''; }}
             />
             <div className={`flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/15 text-3xl ${uploading ? 'animate-pulse' : ''}`}>
-              {uploading ? '⏳' : '📤'}
+              {uploading ? '🚀' : '📤'}
             </div>
             <p className="mt-4 font-semibold">
-              {uploading ? 'Загружаю в космос...' : 'Перетащите файлы сюда или нажмите'}
+              {uploading ? `Загружаю в космос... ${uploadProgress}%` : 'Перетащите файлы сюда или нажмите'}
             </p>
-            <p className="mt-1 text-sm text-muted-foreground">Любой формат до 10 МБ</p>
+            {uploading ? (
+              <div className="mt-3 w-64 overflow-hidden rounded-full bg-secondary">
+                <div
+                  className="h-2 rounded-full bg-primary transition-all duration-300"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            ) : (
+              <p className="mt-1 text-sm text-muted-foreground">Любой формат, любой размер</p>
+            )}
           </div>
 
           {uploadError && (

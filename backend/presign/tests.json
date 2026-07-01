@@ -1,0 +1,26 @@
+{
+  "tests": [
+    {
+      "name": "CORS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Generate presigned URL",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "filename": "test.txt",
+        "content_type": "text/plain"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "upload_url": "string",
+        "cdn_url": "string",
+        "key": "string"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
